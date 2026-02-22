@@ -1,6 +1,13 @@
 # Prerequisites
 *.d
 
+
+build/
+CMakeFiles/
+.claude/
+CMakeUserPresets.json
+
+
 # Compiled Object files
 *.slo
 *.lo
