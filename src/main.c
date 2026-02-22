@@ -1,10 +1,12 @@
 /* soem-pdo-dump: EtherCAT PDO mapping and live data dumper
  *
  * Uses SOEM v2.0.0 API.
- * Requires root or CAP_NET_RAW to open a raw AF_PACKET socket.
+ * Requires root or CAP_NET_RAW to open a raw AF_PACKET socket (Linux),
+ * or Administrator with Npcap installed (Windows).
  *
- * Usage: sudo ./soem-pdo-dump <interface>
- *   e.g.: sudo ./soem-pdo-dump eth0
+ * Usage: soem-pdo-dump --list
+ *        sudo ./soem-pdo-dump <interface>          (Linux)
+ *        soem-pdo-dump.exe <\Device\NPF_{GUID}>    (Windows)
  */
 
 #include <stdio.h>
@@ -15,6 +17,86 @@
 
 /* Single SOEM umbrella header */
 #include "soem/soem.h"
+
+/* ------------------------------------------------------------------ */
+/* Interface listing                                                   */
+/* ------------------------------------------------------------------ */
+
+#ifdef _WIN32
+/* On Windows SOEM uses Npcap/pcap_open(); enumerate via pcap_findalldevs. */
+#include <pcap.h>
+
+static void list_interfaces(void)
+{
+    pcap_if_t *alldevs, *d;
+    char errbuf[PCAP_ERRBUF_SIZE];
+
+    if (pcap_findalldevs(&alldevs, errbuf) == -1) {
+        fprintf(stderr, "pcap_findalldevs failed: %s\n", errbuf);
+        return;
+    }
+
+    printf("Available network interfaces (pass the device name to this tool):\n\n");
+    for (d = alldevs; d != NULL; d = d->next) {
+        printf("  Device : %s\n", d->name);
+        if (d->description)
+            printf("  Desc   : %s\n", d->description);
+        printf("\n");
+    }
+
+    pcap_freealldevs(alldevs);
+}
+
+#else
+/* On Linux SOEM uses raw AF_PACKET sockets; list interfaces from the kernel. */
+#include <ifaddrs.h>
+#include <net/if.h>
+
+static void list_interfaces(void)
+{
+    struct ifaddrs *ifap, *ifa;
+
+    if (getifaddrs(&ifap) == -1) {
+        perror("getifaddrs");
+        return;
+    }
+
+    printf("Available network interfaces (pass the interface name to this tool):\n\n");
+
+    /* Track which names we have already printed to avoid duplicates
+     * (getifaddrs returns one entry per address family per interface). */
+    char seen[64][IF_NAMESIZE];
+    int  nseen = 0;
+
+    for (ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_name)
+            continue;
+
+        /* skip loopback */
+        if (ifa->ifa_flags & IFF_LOOPBACK)
+            continue;
+
+        int already = 0;
+        for (int i = 0; i < nseen; i++) {
+            if (strncmp(seen[i], ifa->ifa_name, IF_NAMESIZE) == 0) {
+                already = 1;
+                break;
+            }
+        }
+        if (already)
+            continue;
+
+        if (nseen < 64)
+            strncpy(seen[nseen++], ifa->ifa_name, IF_NAMESIZE - 1);
+
+        const char *state = (ifa->ifa_flags & IFF_UP) ? "UP" : "DOWN";
+        printf("  Interface : %s  [%s]\n", ifa->ifa_name, state);
+    }
+    printf("\n");
+
+    freeifaddrs(ifap);
+}
+#endif
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                           */
@@ -278,10 +360,23 @@ static void print_pdo_map(const char *direction, const pdo_map_t *map,
 int main(int argc, char *argv[])
 {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <interface>\n", argv[0]);
-        fprintf(stderr, "Example: sudo %s eth0\n\n", argv[0]);
+#ifdef _WIN32
+        fprintf(stderr, "Usage: %s --list\n", argv[0]);
+        fprintf(stderr, "       %s <\\Device\\NPF_{GUID}>\n\n", argv[0]);
+        fprintf(stderr, "Run '%s --list' to see available device names.\n", argv[0]);
+        fprintf(stderr, "Requires Administrator and Npcap installed.\n");
+#else
+        fprintf(stderr, "Usage: %s --list\n", argv[0]);
+        fprintf(stderr, "       sudo %s <interface>\n\n", argv[0]);
+        fprintf(stderr, "Run '%s --list' to see available interfaces.\n", argv[0]);
         fprintf(stderr, "Requires root or CAP_NET_RAW (raw socket access).\n");
+#endif
         return EXIT_FAILURE;
+    }
+
+    if (strcmp(argv[1], "--list") == 0) {
+        list_interfaces();
+        return EXIT_SUCCESS;
     }
 
     const char *ifname = argv[1];

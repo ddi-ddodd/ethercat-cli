@@ -61,45 +61,59 @@ make rebuild
 
 ## Finding the right network interface
 
-You must pass the name of the Ethernet adapter that is physically connected to your EtherCAT network.
+The tool includes a built-in `--list` command that prints all usable interfaces in the exact format required for your platform.
 
 ### Linux
 
 ```bash
-ip link show
+sudo ./build/soem-pdo-dump --list
 ```
 
-Look for an interface that is `UP` and has a link, e.g. `eth0`, `enp3s0`, `ens33`. Avoid `lo` (loopback) and Wi-Fi adapters (`wlan*`).
+Example output:
 
-```bash
-# Example output — pick the wired adapter connected to EtherCAT hardware
-2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 ...
 ```
+Available network interfaces (pass the interface name to this tool):
+
+  Interface : eth0   [UP]
+  Interface : enp3s0 [UP]
+  Interface : wlan0  [UP]
+```
+
+Pick the wired adapter connected to your EtherCAT hardware (avoid Wi-Fi and loopback). You can also use `ip link show` for more detail.
 
 ### Windows
 
-Open **PowerShell** or **Command Prompt**:
+> **Important:** On Windows, SOEM uses Npcap to open raw Ethernet frames. Npcap does **not** accept friendly adapter names like `Ethernet 10` — it requires the internal `\Device\NPF_{GUID}` device path.
 
-```powershell
-# Shows all adapters with their index, name, and status
-Get-NetAdapter | Select-Object Name, InterfaceDescription, Status, MacAddress
-```
-
-Or use the older command:
+Open **Command Prompt or PowerShell as Administrator**, then run:
 
 ```cmd
-ipconfig /all
+.\build\Release\soem-pdo-dump.exe --list
 ```
 
-Look for an adapter marked **Up** whose description matches your network card (e.g. "Intel(R) Ethernet Connection"). Note the **Name** column (e.g. `Ethernet`, `Local Area Connection`) — that is what you pass to the tool.
+Example output:
 
-Npcap uses the adapter's friendly name prefixed with `\Device\NPF_` internally, but `soem-pdo-dump` accepts the plain adapter name as shown by `Get-NetAdapter`.
+```
+Available network interfaces (pass the device name to this tool):
+
+  Device : \Device\NPF_{E905FC24-284B-4BCE-9E1C-DF682422A1F2}
+  Desc   : ASIX AX88179A USB 3.2 Gen1 to Gigabit Ethernet Adapter #3
+
+  Device : \Device\NPF_{5219458A-688A-47D7-8421-407DA17F8D16}
+  Desc   : Realtek USB GbE Family Controller #2
+```
+
+Copy the `Device` string for the adapter physically connected to your EtherCAT network and pass it as the interface argument.
 
 ## Running
 
 ### Linux
 
 ```bash
+# List interfaces
+sudo ./build/soem-pdo-dump --list
+
+# Run
 sudo ./build/soem-pdo-dump <interface>
 
 # Example
@@ -110,6 +124,7 @@ Or grant the capability to avoid `sudo`:
 
 ```bash
 sudo setcap cap_net_raw+ep ./build/soem-pdo-dump
+./build/soem-pdo-dump --list
 ./build/soem-pdo-dump eth0
 ```
 
@@ -118,17 +133,19 @@ sudo setcap cap_net_raw+ep ./build/soem-pdo-dump
 Open **Command Prompt or PowerShell as Administrator**, then:
 
 ```cmd
-.\build\Release\soem-pdo-dump.exe <interface>
+:: List interfaces to find your device path
+.\build\Release\soem-pdo-dump.exe --list
 
-:: Example
-.\build\Release\soem-pdo-dump.exe Ethernet
+:: Run with the NPF device path shown by --list
+.\build\Release\soem-pdo-dump.exe \Device\NPF_{E905FC24-284B-4BCE-9E1C-DF682422A1F2}
 ```
 
 ## Troubleshooting
 
 | Symptom | Likely cause |
 |---------|-------------|
-| `Failed to initialize EtherCAT` | Wrong interface name, or missing root/admin privileges |
+| `interface X could not open with pcap` (Windows) | Using a friendly name instead of `\Device\NPF_{GUID}` — run `--list` |
+| `Failed to initialize EtherCAT` | Wrong interface, or not running as Administrator (Windows) / root (Linux) |
 | `No EtherCAT slaves found` | Cable unplugged, slave unpowered, or wrong adapter selected |
 | Working counter mismatch | Cabling issue or slave not fully operational |
-| `cannot open include file: pcap.h` (Windows build) | Npcap runtime not installed, or Conan setup not run |
+| `cannot open include file: pcap.h` (Windows build) | Npcap runtime not installed, or `make setup` not run |
