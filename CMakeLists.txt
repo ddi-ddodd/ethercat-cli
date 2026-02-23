@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(soem-pdo-dump VERSION 1.0.0 LANGUAGES CXX)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Conan-generated toolchain sets CMAKE_PREFIX_PATH so find_package resolves
 find_package(soem REQUIRED)
 
