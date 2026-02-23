@@ -63,4 +63,22 @@ void enumerate_pdo_maps(ecx_contextt *ctx, int slave_num,
 void print_pdo_map(const char *direction, const pdo_map_t *map,
                    const uint8_t *io_data, int io_bytes);
 
+/* Allocate and enumerate PDO mappings for all slaves (called in PRE-OP).
+ *
+ * Allocates rx_maps and tx_maps arrays (caller must free with pdo_maps_free),
+ * then enumerates and prints the PDO mappings for each slave.
+ *
+ * Returns 0 on success, non-zero on allocation failure.
+ */
+int pdo_maps_enumerate(ecx_contextt *ctx, int slave_count,
+                       pdo_map_t **rx_maps_out, pdo_map_t **tx_maps_out);
+
+/* Free PDO map arrays allocated by pdo_maps_enumerate. */
+void pdo_maps_free(pdo_map_t *rx_maps, pdo_map_t *tx_maps);
+
+/* Print live PDO data for all slaves after a PDO exchange cycle. */
+void pdo_print_live_data(ecx_contextt *ctx,
+                         const pdo_map_t *rx_maps,
+                         const pdo_map_t *tx_maps);
+
 #endif /* PDO_H */
