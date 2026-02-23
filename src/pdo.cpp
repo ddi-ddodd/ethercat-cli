@@ -1,6 +1,7 @@
 /* pdo.cpp: PDO mapping discovery and display functions */
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <cstdint>
 #include <cinttypes>
@@ -205,6 +206,94 @@ void print_pdo_map(const char *direction, const pdo_map_t *map,
             }
         } else {
             std::printf("  [no live data]");
+        }
+        std::printf("\n");
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Allocate and enumerate PDO mappings for all slaves                 */
+/* ------------------------------------------------------------------ */
+int pdo_maps_enumerate(ecx_contextt *ctx, int slave_count,
+                       pdo_map_t **rx_maps_out, pdo_map_t **tx_maps_out)
+{
+    std::printf("=== PDO Mappings (CoE SDO reads, slaves in PRE-OP) ===\n\n");
+
+    auto *rx_maps = static_cast<pdo_map_t *>(
+        std::calloc(static_cast<size_t>(slave_count + 1), sizeof(pdo_map_t)));
+    auto *tx_maps = static_cast<pdo_map_t *>(
+        std::calloc(static_cast<size_t>(slave_count + 1), sizeof(pdo_map_t)));
+    if (!rx_maps || !tx_maps) {
+        std::fprintf(stderr, "ERROR: Out of memory\n");
+        std::free(rx_maps);
+        std::free(tx_maps);
+        *rx_maps_out = nullptr;
+        *tx_maps_out = nullptr;
+        return -1;
+    }
+
+    for (int s = 1; s <= slave_count; s++) {
+        ec_slavet *sl = &ctx->slavelist[s];
+        std::printf("--- Slave %d: %s ---\n", s, sl->name);
+        enumerate_pdo_maps(ctx, s, &rx_maps[s], &tx_maps[s]);
+        print_pdo_map("RxPDO (master->slave)", &rx_maps[s], nullptr, 0);
+        print_pdo_map("TxPDO (slave->master)", &tx_maps[s], nullptr, 0);
+        std::printf("\n");
+    }
+
+    *rx_maps_out = rx_maps;
+    *tx_maps_out = tx_maps;
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Free PDO map arrays                                                */
+/* ------------------------------------------------------------------ */
+void pdo_maps_free(pdo_map_t *rx_maps, pdo_map_t *tx_maps)
+{
+    std::free(rx_maps);
+    std::free(tx_maps);
+}
+
+/* ------------------------------------------------------------------ */
+/* Print live PDO data for all slaves                                 */
+/* ------------------------------------------------------------------ */
+void pdo_print_live_data(ecx_contextt *ctx,
+                         const pdo_map_t *rx_maps,
+                         const pdo_map_t *tx_maps)
+{
+    std::printf("=== Live PDO Data ===\n\n");
+
+    for (int s = 1; s <= ctx->slavecount; s++) {
+        ec_slavet *sl = &ctx->slavelist[s];
+        std::printf("--- Slave %d: %s ---\n", s, sl->name);
+
+        /* Outputs: master->slave (RxPDO from slave's perspective) */
+        if (sl->Obytes > 0 && sl->outputs != nullptr) {
+            std::printf("  Output data (%u bytes):\n", sl->Obytes);
+            print_pdo_map("RxPDO", &rx_maps[s],
+                          sl->outputs, static_cast<int>(sl->Obytes));
+            std::printf("  Raw bytes: ");
+            for (uint32_t b = 0; b < sl->Obytes; b++) {
+                std::printf("%02X ", sl->outputs[b]);
+            }
+            std::printf("\n");
+        } else {
+            std::printf("  No output PDO data.\n");
+        }
+
+        /* Inputs: slave->master (TxPDO from slave's perspective) */
+        if (sl->Ibytes > 0 && sl->inputs != nullptr) {
+            std::printf("  Input data (%u bytes):\n", sl->Ibytes);
+            print_pdo_map("TxPDO", &tx_maps[s],
+                          sl->inputs, static_cast<int>(sl->Ibytes));
+            std::printf("  Raw bytes: ");
+            for (uint32_t b = 0; b < sl->Ibytes; b++) {
+                std::printf("%02X ", sl->inputs[b]);
+            }
+            std::printf("\n");
+        } else {
+            std::printf("  No input PDO data.\n");
         }
         std::printf("\n");
     }
